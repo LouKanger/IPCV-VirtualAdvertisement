@@ -1,36 +1,62 @@
-%% L.W.J. Kanger - s1931318 - University of Twente
-% Video from: https://www.youtube.com/watch?v=m-Vi_y0d-IE
-% Match at stadium of AS Roma. Dimensions: 105 x 60 meters 
-% (ref. https://www.football-italia.net/clubs/Roma/stadium)
+%% Setup and general information about the script
+% L.W.J. Kanger - s1931318 - University of Twente
+% Example videos from: https://www.youtube.com/watch?v=w1E8amFdQs0
 %
-% from 1.55 to 1.59/2.00 has clear view
+% Algorithm Steps:
+% 0) Before algorithm starts: detect lines using the self-made algorithm and
+%    manually select intersections in the image and the corresponding points in
+%    the model. This determines the initial state and the points that will be
+%    used in all the future frames.
+% 1) Find the white field line pixels in the current frame. The algorithm used
+%    for this (which is also used in step 0) is based on Ref. [1].
+% 2) Refine the lines detected in the previous frame such that they match the 
+%    white field lines of the current frame.
+% 3) Calcule the homography and transform the coordinates of the advertisment
+%    sign. Store the transformed coordinates.
+% 4) Repeat steps 1 to 3 until all frames are processed.
+% 5) Reduce the noise present in the transformed coordinates.
+% 6) Place the advertisment sign on the grass pixels and create the video.
 %
-% Additional rescourses
-% https://github.com/cemunds/awesome-sports-camera-calibration
+% Improvement(s):
+% - Make the algorithm fully automatic. So remove the manual selection of
+%   corresponding intersection points by finding the best fitting homography.
+%   For an example implementation see: 
+%
+% References:
+% [1] Farin, Dirk & Krabbe, Susanne & With, Peter & Effelsberg, Wolfgang. 
+%     (2004). Robust camera calibration for sport videos using court models. 
+%     5307. 80-91. 10.1117/12.526813. 
 
 % Clear workspace and console. Close all figures
 clear, clc 
 close all
 
-% Set debug to true to see the resulting image after each step
-debug = false;
-
 % Suppress specific warning
 warning('off', 'Images:initSize:adjustingMag');
 
-%% Load the video
-filename = 'soccer_video_AJAX_1.mp4';
+%% Specify the input and output file names and all the used parameters
+% Define the filenames and the data directory name
 data_dir_name = 'data';
-video_reader = VideoReader(data_dir_name+"/"+filename);
+output_dir_name = 'processed_videos';
+input_video_filename = 'soccer_video_example1.mp4';
+advertisment_sign_filename = 'ad_sign_example1.png';
+output_video_filename = 'virtual_ad_result_vid_example1.avi';
 
-im_rgb_raw = readFrame(video_reader);
-im_rgb = im2double(im_rgb_raw);
-im = rgb2gray(im_rgb);
+% Define all parameters of the field line detection and optimisation algorithm
+dlambda = 30;       % number of color points around dominant color peak
+tl = 128;           % luminace threshold
+td = 20;            % difference threshold
+tau = 10;           % line width assumption (twice this value)
+num_peaks = 12;      % number of Hough peaks
+fill_gap = 50;      % maximum gap between two linesegments (which still counts as 1 line)
+min_length = 200;   % minimum length of the found lines
+dtheta = 3.5;       % if angle difference bewteen 2 lines less than dtheta, remove 1
+drho = 50;          % if distance between 2 lines less than drho, remove 1
+tmax = 12;          % line has angle less than tmax is labeled horizontal
+sigma_r = 6;        % max distance between white pixel and line
+num_iterations = 3; % number of line refinement iterations
 
-figure('units','normalized','position',[0.1 0.1 0.7 0.7]);
-imshow(im_rgb,[],'InitialMagnification',200);
-
-%% Create 2D exact field lines and show all intersection points
+%% Create 2D exact field lines and add the virtual advertisment sign
 % International standards for the soccer field dimensions
 width = 105; height = 68;
 [field_lines, field_points] = generate_field_lines(width, height);
@@ -42,10 +68,9 @@ field_lines_hor = field_lines(8:end,:);
 w = 12;     % w meters long sign
 h = 3;      % h meters high sign (flat on the ground)
 d = 0.75;   % d meters from back field line
-point1 = [-d-h, height/4 - w; -d, height/4 - w; -d-h, height/4 - w; -d-h, height/4];
-point2 = [-d-h, height/4; -d, height/4; -d, height/4 - w; -d, height/4];
-point1(:,2) = point1(:,2) + 5;
-point2(:,2) = point2(:,2) + 5;
+y = height / 4 + 5; % meters, distance left side of sign to right corner
+point1 = [-d-h, y - w; -d, y - w; -d-h, y - w; -d-h, y];
+point2 = [-d-h, y; -d, y; -d, y - w; -d, y];
 adv_points_model = table2struct(table(point1, point2));
 
 % Loop over the vertical lines, calc intersect with all horizontal lines
@@ -80,21 +105,13 @@ for i = 1:4
     end
 end
 
-%% Define all parameters of the field line detection algorithm
-dlambda = 30;       % number of color points around dominant color peak
-tl = 128;           % luminace threshold
-td = 20;            % difference threshold
-tau = 10;           % line width assumption (twice this value)
-num_peaks = 12;      % number of Hough peaks
-fill_gap = 50;      % maximum gap between two linesegments (which still counts as 1 line)
-min_length = 200;   % minimum length of the found lines
-dtheta = 3.5;       % if angle difference bewteen 2 lines less than dtheta, remove 1
-drho = 50;          % if distance between 2 lines less than drho, remove 1
-tmax = 12;          % line has angle less than tmax is labeled horizontal
-sigma_r = 6;        % max distance between white pixel and line
-num_iterations = 3; % number of line refinement iterations
-
 %% Perform the white field line detection algorithm
+% Grab the first frame used for analysis
+video_reader = VideoReader(strcat(data_dir_name,'/',input_video_filename));
+im_rgb_raw = readFrame(video_reader);
+im_rgb = im2double(im_rgb_raw);
+im = rgb2gray(im_rgb);
+
 % Construct a field mask and enhance the result
 field_mask_raw = construct_field_mask(im_rgb_raw, dlambda);
 field_mask = enhance_field_mask(field_mask_raw);
@@ -145,10 +162,10 @@ for i = 1:size(lines_vert_h,1)
 end
 
 %% Manually select corresponding intersections
-% create figure and show the detected field lines and intersections
+% Create figure and show the detected field lines and intersections
 figure('units','normalized','position',[0.1 0.1 0.7 0.7]);
 suptitle('Write down the corresponding indices in the array')
-subplot(2,1,1);
+subplot(1,2,1);
 hold on
 set(gca,'Ydir','reverse')
 daspect([1,1,1])
@@ -166,7 +183,7 @@ for i = 1:size(intersections, 1)
 end
 
 % show the model field lines and intersections
-subplot(2,1,2);
+subplot(1,2,2);
 hold on
 set(gca,'Ydir','reverse')
 axis off
@@ -186,99 +203,25 @@ for i = 1:size(field_line_int_points_left, 1)
     text(pt(1)+0.5, pt(2)+2, num2str(i),'FontSize',12);
 end
 
-% ask to write down the correct combination of intersections
+% Ask to write down the correct combination of intersections
 point_idx = input('Write down the corresponding intersection points: [p1, q1; p2, q2; ...]\n');
-% soccer_field_1: [1,2 ; 2,4 ; 3,5 ; 4,8 ; 5,10 ; 6,11 ; 7,14 ; 8,16; 9,17]
-% soccer_field_3: [7,2 ; 8,4 ; 9,5 ; 10,8 ; 11,10 ; 12,11 ; 13,14 ; 14,16; 15,17]
-% soccer_field_4: [1,2 ; 2,4 ; 3,5 ; 4,6 ; 5,8 ; 6,10 ; 7,11 ; 8,12]
-% video_1: [11,2; 10,4; 9,5; 12,6; 15,8; 14,10; 13,11; 16,12]
-% screen_shot_AJAX_1: [1,1; 2,2; 3,3; 4,4; 6,7; 7,8; 8,9; 9,10; 11,13; 12,14; 13,15; 14,16; 15,17]
-% v2: [1,1; 2,2; 3,3; 4,4; 6,7; 7,8; 8,9; 12,14; 13,15; 14,16; 15,17]
+% Here are the combinations of the example videos:
+% soccer_video_AJAX_1: 
+%         [1,1; 2,2; 3,3; 4,4; 6,7; 7,8; 8,9; 12,14; 13,15; 14,16; 15,17]
 
 % store the result (p = detected intersections, q = model intersections)
 p_init = intersections(point_idx(:,1),:);
 q_init = field_line_int_points_left(point_idx(:,2),:);
 
-%% Determine the homography to warp advertisment sign onto the image
-% Apply scale and translation to model for better result
-scale = 10;
-offset = (size(im,1) - scale * height) / 2;
-
-% estimate the geometric transform using the hand-picked point pairs
-Hm2w = estimateGeometricTransform(q_init * scale + offset, p_init, 'projective', ...
-    'MaxNumTrials', 2000, 'Confidence', 99.9);
-
-if debug == true
-    % transform model field lines to the image coordinate frame
-    % (transformPointsInverse is also available)
-    points1 = zeros(length(field_points),2);
-    points2 = zeros(length(field_points),2);
-    for k = 1:length(points1)
-        points1(k,:) = [field_points(k).point1] * scale + offset;
-        points2(k,:) = [field_points(k).point2] * scale + offset;
-    end
-    world_points1 = transformPointsForward(Hm2w, points1);
-    world_points2 = transformPointsForward(Hm2w, points2);
-    field_points_world = table2struct(table(world_points1, world_points2, ...
-        'VariableNames', {'point1', 'point2'}));
-
-    % show original image with field lines projected on them
-    figure('units','normalized','position',[0.1 0.1 0.7 0.7]);
-    imshow(im_rgb_raw,[],'InitialMagnification',200);
-    hold on
-    for k = 1:length(field_points_world)
-        xy = [field_points_world(k).point1; field_points_world(k).point2];
-        plot(xy(:,1),xy(:,2),'LineWidth',2,'Color','red');
-    end
-end
-
-% Warp advertisment sign from model coordinates to image/world coordinates
-points1 = zeros(length(adv_points_model),2);
-points2 = zeros(length(adv_points_model),2);
-for k = 1:length(points1)
-    points1(k,:) = [adv_points_model(k).point1] * scale + offset;
-    points2(k,:) = [adv_points_model(k).point2] * scale + offset;
-end
-world_points1 = transformPointsForward(Hm2w, points1);
-world_points2 = transformPointsForward(Hm2w, points2);
-adv_points_world = table2struct(table(world_points1, world_points2, ...
-    'VariableNames', {'point1', 'point2'}));
-
-% % show original image with field lines projected on them
-% figure('units','normalized','position',[0.1 0.1 0.7 0.7]);
-% imshow(im_rgb_raw,[],'InitialMagnification',200);
-% hold on
-
-X = [adv_points_world(1).point1(1), adv_points_world(2).point1(1), ...
-    adv_points_world(2).point2(1), adv_points_world(1).point2(1)];
-Y = [adv_points_world(1).point1(2), adv_points_world(2).point1(2), ...
-    adv_points_world(2).point2(2), adv_points_world(1).point2(2)];
-
-% patch(X,Y,'red');
-% title('Frame 1');
-
 %% Place the advertisment sign onto all frames of the video
-
-% TODO:
-% - As a final step, make the algorithm fully automatic. So remove the manual
-%   selection of corresponding intersection points by finding the best fitting
-%   homography (see the article that also does the white line pixel detection)
-
-% Algorithm Steps:
-% 0) Before algorithm starts: detect lines using the self-made algorithm and
-%    manually select intersections in the image and the corresponding points in
-%    the model. This determines the initial state and the points that will be
-%    used in all the future frames.
-% 1) Create white pixel mask of current frame
-% 2) Refine the lines of the previous frame such that they match the new frame
-% 3) Calcule the homography
-% 4) Place advertisment sign
-% 5) Repeat
-
 % Load advertisment sign image
-[ad_img, cmap] = imread(data_dir_name+"/"+"advertisment_image_1.png");
+[ad_img, cmap] = imread(strcat(data_dir_name,'/',advertisment_sign_filename));
 ad_img = im2uint8(ind2rgb(ad_img, cmap));
 ad_img = imrotate(ad_img, 90);  % Rotate to place along back field line
+
+% Apply scale and translation to model coordinates for better result
+scale = 10;
+offset = (size(im,1) - scale * height) / 2;
 
 % Setup for warping the advertisment sign
 x = zeros(length(adv_points_model), 2);
@@ -298,9 +241,9 @@ yWorldLimits = [min(y, [], 'all'), max(y, [], 'all')];
 ad_img_ref = imref2d(size(ad_img), xWorldLimits, yWorldLimits);
 
 % Reset the video reader and get the number of frames (quirky Matlab stuff)
-video_reader = VideoReader(data_dir_name+"/"+filename);
+video_reader = VideoReader(strcat(data_dir_name,'/',input_video_filename));
 num_frames = video_reader.NumberOfFrames;
-video_reader = VideoReader(data_dir_name+"/"+filename);
+video_reader = VideoReader(strcat(data_dir_name,'/',input_video_filename));
 
 % Create video multi-frame matrix to store the frames
 max_frames = 150; %30;
@@ -339,7 +282,7 @@ while hasFrame(video_reader)
     white_field_lines = detect_white_pixels(im_field_masked, tl, td, tau);
     
     % ------------------------------------------------------------------------ %
-    % ---------------[ Find the field lines and the key POIs ]---------------- %
+    % ----------[ Find the field lines and matching intersections ]----------- %
     % ------------------------------------------------------------------------ %
     % Find the new lines by refining the old lines using the new frame
     [lines_vert_h, lines_hor_h] = refine_line_parameters(white_field_lines, ...
@@ -362,14 +305,14 @@ while hasFrame(video_reader)
             k = k + 1;
         end
     end
+    
+    % Get the matching intersection points using the new intersections
+    p = intersections(point_idx(:,1),:);
+    q = field_line_int_points_left(point_idx(:,2),:);  % Same in every frame
 
     % ------------------------------------------------------------------------ %
     % ----------[ Calculate Homography and transform advertisment ]----------- %
     % ------------------------------------------------------------------------ %
-    % Get the matching points using the new intersections
-    p = intersections(point_idx(:,1),:);
-    q = field_line_int_points_left(point_idx(:,2),:);  % constant
-    
     % Estimate the geometric transform using the point pairs
     Hm2w = estimateGeometricTransform(q * scale + offset, p, 'projective', ...
         'MaxNumTrials', 2000, 'Confidence', 99.9);
@@ -405,7 +348,7 @@ end
 calc_time = toc;
 disp("Completed calculations for each frame in " + calc_time + " seconds.")
 
-%% Create the video
+%% Create video of the noise filtered virtual advertisment sign
 % Smooth the transformed virtual advertisment points
 frame_span = 15;
 ad_pos = zeros(size(warped_ad_points, 1), 4, 2);
@@ -425,13 +368,11 @@ qq_yWorldLimits = [min(qq(:,2)), max(qq(:,2))];
 ad_img_ref2 = imref2d(size(ad_img), qq_xWorldLimits, qq_yWorldLimits);
 
 % Reset the video reader
-video_reader = VideoReader(data_dir_name+"/"+filename);
+video_reader = VideoReader(strcat(data_dir_name,'/',input_video_filename));
 
 % Create video object with 15 FPS
-video_name = 'ajaxVidVirtualAd_v5.avi';
-writerObj = VideoWriter(video_name);
+writerObj = VideoWriter(strcat(output_dir_name,'/',output_video_filename));
 writerObj.FrameRate = 15;
-
 disp("Creating video ...")
 
 % Write the frames to the video object to create the video
@@ -442,6 +383,7 @@ hold on
 
 tic;
 for frame = 1:size(ad_pos, 1)
+    % Grab the next frame from the video reader
     frame_img = readFrame(video_reader);
     
     % Find the geometric transform of the ad image to the virtual position
@@ -473,9 +415,10 @@ for frame = 1:size(ad_pos, 1)
     clf(fig);
 end
 close(writerObj);
+close all;
 
 vid_create_time = toc;
-disp("Finished video with name: '"+video_name+"'")
+disp("Finished video with name: '"+output_video_filename+"'")
 disp("Calculation time is " + vid_create_time + " seconds.")
 
 %% Plot the corner positions of the virtual advertisment sign (data visualisation)
@@ -503,10 +446,5 @@ for i = 1:4
 end
 hold off
 title("y pos");
-% legend("Raw 1", "Filtered 1", "Raw 2", "Filtered 2", "Raw 3", "Filtered 3", ...
-%     "Raw 4", "Filtered 4", 'Location', 'northwest');
 xlabel("Frame number");
 ylabel("Pixel number");
-
-
-
