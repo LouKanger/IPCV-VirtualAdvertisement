@@ -11,11 +11,11 @@
 %    for this (which is also used in step 0) is based on Ref. [1].
 % 2) Refine the lines detected in the previous frame such that they match the 
 %    white field lines of the current frame.
-% 3) Calcule the homography and transform the coordinates of the advertisment
+% 3) Calcule the homography and transform the coordinates of the advertisement
 %    sign. Store the transformed coordinates.
 % 4) Repeat steps 1 to 3 until all frames are processed.
 % 5) Reduce the noise present in the transformed coordinates.
-% 6) Place the advertisment sign on the grass pixels and create the video.
+% 6) Place the advertisement sign on the grass pixels and create the video.
 %
 % Improvement(s):
 % - Make the algorithm fully automatic. So remove the manual selection of
@@ -39,7 +39,7 @@ warning('off', 'Images:initSize:adjustingMag');
 data_dir_name = 'data';
 output_dir_name = 'processed_videos';
 input_video_filename = 'soccer_video_example1.mp4';
-advertisment_sign_filename = 'ad_sign_example1.png';
+advertisement_sign_filename = 'ad_sign_example1.png';
 output_video_filename = 'virtual_ad_result_vid_example1.avi';
 
 % Define all parameters of the field line detection and optimisation algorithm
@@ -47,7 +47,7 @@ dlambda = 30;       % number of color points around dominant color peak
 tl = 128;           % luminace threshold
 td = 20;            % difference threshold
 tau = 10;           % line width assumption (twice this value)
-num_peaks = 12;      % number of Hough peaks
+num_peaks = 12;     % number of Hough peaks
 fill_gap = 50;      % maximum gap between two linesegments (which still counts as 1 line)
 min_length = 200;   % minimum length of the found lines
 dtheta = 3.5;       % if angle difference bewteen 2 lines less than dtheta, remove 1
@@ -56,7 +56,7 @@ tmax = 12;          % line has angle less than tmax is labeled horizontal
 sigma_r = 6;        % max distance between white pixel and line
 num_iterations = 3; % number of line refinement iterations
 
-%% Create 2D exact field lines and add the virtual advertisment sign
+%% Create 2D exact field lines and add the virtual advertisement sign
 % International standards for the soccer field dimensions
 width = 105; height = 68;
 [field_lines, field_points] = generate_field_lines(width, height);
@@ -64,7 +64,7 @@ width = 105; height = 68;
 field_lines_vert = field_lines(1:7,:);
 field_lines_hor = field_lines(8:end,:);
 
-% Create virtual advertisment sign in model coordinate system
+% Create virtual advertisement sign in model coordinate system
 w = 12;     % w meters long sign
 h = 3;      % h meters high sign (flat on the ground)
 d = 0.75;   % d meters from back field line
@@ -213,9 +213,9 @@ point_idx = input('Write down the corresponding intersection points: [p1, q1; p2
 p_init = intersections(point_idx(:,1),:);
 q_init = field_line_int_points_left(point_idx(:,2),:);
 
-%% Place the advertisment sign onto all frames of the video
-% Load advertisment sign image
-[ad_img, cmap] = imread(strcat(data_dir_name,'/',advertisment_sign_filename));
+%% Place the advertisement sign onto all frames of the video
+% Load advertisement sign image
+[ad_img, cmap] = imread(strcat(data_dir_name,'/',advertisement_sign_filename));
 ad_img = im2uint8(ind2rgb(ad_img, cmap));
 ad_img = imrotate(ad_img, 90);  % Rotate to place along back field line
 
@@ -223,7 +223,7 @@ ad_img = imrotate(ad_img, 90);  % Rotate to place along back field line
 scale = 10;
 offset = (size(im,1) - scale * height) / 2;
 
-% Setup for warping the advertisment sign
+% Setup for warping the advertisement sign
 x = zeros(length(adv_points_model), 2);
 y = zeros(length(adv_points_model), 2);
 for k = 1:length(adv_points_model)
@@ -252,13 +252,13 @@ max_frames = 150; %30;
 lines_vert_h_old = lines_vert_h;
 lines_hor_h_old = lines_hor_h;
 
-% Array to store the corners of the transformed virtual advertisment sign
+% Array to store the corners of the transformed virtual advertisement sign
 warped_ad_points = zeros(max_frames, 2, 4); % (num_frames, xy, 4 corners)
 
 % Frame counter
 frame = 1;
 
-disp("Transforming advertisment sign onto the frames.")
+disp("Transforming advertisement sign onto the frames.")
 tic;
 while hasFrame(video_reader)
     disp("Frame: " + num2str(frame))
@@ -311,13 +311,13 @@ while hasFrame(video_reader)
     q = field_line_int_points_left(point_idx(:,2),:);  % Same in every frame
 
     % ------------------------------------------------------------------------ %
-    % ----------[ Calculate Homography and transform advertisment ]----------- %
+    % ----------[ Calculate Homography and transform advertisement ]----------- %
     % ------------------------------------------------------------------------ %
     % Estimate the geometric transform using the point pairs
     Hm2w = estimateGeometricTransform(q * scale + offset, p, 'projective', ...
         'MaxNumTrials', 2000, 'Confidence', 99.9);
 
-    % Warp advertisment sign from model coordinates to image/world coordinates
+    % Warp advertisement sign from model coordinates to image/world coordinates
     points1 = zeros(length(adv_points_model),2);
     points2 = zeros(length(adv_points_model),2);
     for k = 1:length(points1)
@@ -329,7 +329,7 @@ while hasFrame(video_reader)
     adv_points_world = table2struct(table(world_points1, world_points2, ...
         'VariableNames', {'point1', 'point2'}));
 
-    % Store the transformed advertisment coordinates
+    % Store the transformed advertisement coordinates
     X = [adv_points_world(1).point1(1), adv_points_world(2).point1(1), ...
         adv_points_world(2).point2(1), adv_points_world(1).point2(1)];
     Y = [adv_points_world(1).point1(2), adv_points_world(2).point1(2), ...
@@ -348,8 +348,8 @@ end
 calc_time = toc;
 disp("Completed calculations for each frame in " + calc_time + " seconds.")
 
-%% Create video of the noise filtered virtual advertisment sign
-% Smooth the transformed virtual advertisment points
+%% Create video of the noise filtered virtual advertisement sign
+% Smooth the transformed virtual advertisement points
 frame_span = 15;
 ad_pos = zeros(size(warped_ad_points, 1), 4, 2);
 for i = 1:size(ad_pos,2)
@@ -357,7 +357,7 @@ for i = 1:size(ad_pos,2)
     ad_pos(:,i,2) = smooth(warped_ad_points(:,2,i), frame_span, 'rloess');
 end
 
-% Define the new image reference object for the advertisment
+% Define the new image reference object for the advertisement
 qq = [0,                0
       size(ad_img,1),   0;
       size(ad_img,1),   size(ad_img,2);
@@ -390,11 +390,11 @@ for frame = 1:size(ad_pos, 1)
     Tform = estimateGeometricTransform(qq, reshape(ad_pos(frame,:,:), 4,2), ...
         'projective', 'MaxNumTrials', 2000, 'Confidence', 99.9);
     
-    % Warp the advertisment image onto the field
+    % Warp the advertisement image onto the field
     warped_ad_img = imwarp(ad_img, ad_img_ref2, Tform, ...
         'OutputView', imref2d(size(im_rgb_raw)));
 
-    % Place only the advertisment sign on the green field pixels of the new frame
+    % Place only the advertisement sign on the green field pixels of the new frame
     field_mask = construct_field_mask(frame_img, round(dlambda*1.25));
     field_mask = field_mask .* ones([size(field_mask),3]);
     masked_warped_ad = im2uint8(im2double(warped_ad_img) .* field_mask);
@@ -421,7 +421,7 @@ vid_create_time = toc;
 disp("Finished video with name: '"+output_video_filename+"'")
 disp("Calculation time is " + vid_create_time + " seconds.")
 
-%% Plot the corner positions of the virtual advertisment sign (data visualisation)
+%% Plot the corner positions of the virtual advertisement sign (data visualisation)
 figure;
 ax1 = subplot(1,2,1);
 hold on
