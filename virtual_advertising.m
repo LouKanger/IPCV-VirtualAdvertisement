@@ -40,7 +40,7 @@ data_dir_name = 'data';
 output_dir_name = 'processed_videos';
 input_video_filename = 'soccer_video_example1.mp4';
 advertisement_sign_filename = 'ad_sign_example1.png';
-output_video_filename = 'virtual_ad_result_vid_example1.avi';
+output_video_filename = 'virtual_ad_result_vid_example1.mp4';
 
 % Define all parameters of the field line detection and optimisation algorithm
 dlambda = 30;       % number of color points around dominant color peak
@@ -313,9 +313,8 @@ while hasFrame(video_reader)
     % ------------------------------------------------------------------------ %
     % ----------[ Calculate Homography and transform advertisement ]----------- %
     % ------------------------------------------------------------------------ %
-    % Estimate the geometric transform using the point pairs
-    Hm2w = estimateGeometricTransform(q * scale + offset, p, 'projective', ...
-        'MaxNumTrials', 2000, 'Confidence', 99.9);
+    % Fit and determine the geometric transform using the point pairs
+    Hm2w = fitgeotrans(q * scale + offset, p, 'projective');
 
     % Warp advertisement sign from model coordinates to image/world coordinates
     points1 = zeros(length(adv_points_model),2);
@@ -386,9 +385,8 @@ for frame = 1:size(ad_pos, 1)
     % Grab the next frame from the video reader
     frame_img = readFrame(video_reader);
     
-    % Find the geometric transform of the ad image to the virtual position
-    Tform = estimateGeometricTransform(qq, reshape(ad_pos(frame,:,:), 4,2), ...
-        'projective', 'MaxNumTrials', 2000, 'Confidence', 99.9);
+    % Determine the geometric transform of the ad image to the virtual position
+    Tform = fitgeotrans(qq, reshape(ad_pos(frame,:,:), 4,2), 'projective');
     
     % Warp the advertisement image onto the field
     warped_ad_img = imwarp(ad_img, ad_img_ref2, Tform, ...
