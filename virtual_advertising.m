@@ -420,6 +420,7 @@ disp("Finished video with name: '"+output_video_filename+"'")
 disp("Calculation time is " + vid_create_time + " seconds.")
 
 %% Plot the corner positions of the virtual advertisement sign (data visualisation)
+% Plot the x-coordinates
 figure;
 ax1 = subplot(1,2,1);
 hold on
@@ -435,6 +436,7 @@ legend("Raw 1", "Filtered 1", "Raw 2", "Filtered 2", "Raw 3", "Filtered 3", ...
 xlabel("Frame number");
 ylabel("Pixel number");
 
+% Plot the y-coordinates
 ax2 = subplot(1,2,2);
 hold on
 for i = 1:4
