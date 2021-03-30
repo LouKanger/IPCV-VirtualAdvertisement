@@ -53,6 +53,8 @@ min_length = 200;   % minimum length of the found lines
 dtheta = 3.5;       % if angle difference bewteen 2 lines less than dtheta, remove 1
 drho = 50;          % if distance between 2 lines less than drho, remove 1
 tmax = 12;          % line has angle less than tmax is labeled horizontal
+tvert = 1.25;       % outlier threshold factor (smaller is more sensitive)
+thor = 3.0;         % outlier threshold factor (3 is the default value of ISOUTLIER)
 sigma_r = 6;        % max distance between white pixel and line
 num_iterations = 3; % number of line refinement iterations
 
@@ -136,8 +138,8 @@ lines = remove_duplicate_lines(lines, dtheta, drho);
 % Detect and remove any outliers (goal post lines or arc lines)
 angles_vert = [lines_vert.theta];
 angles_hor = [lines_hor.theta];
-lines_vert(isoutlier(angles_vert)) = [];
-lines_hor(isoutlier(angles_hor)) = [];
+lines_vert(isoutlier(angles_vert, 'ThresholdFactor', tvert)) = [];
+lines_hor(isoutlier(angles_hor, 'ThresholdFactor', thor)) = [];
 
 % Convert to homogeneous coordinates
 lines_vert_h = lines_to_homogeneous(lines_vert);

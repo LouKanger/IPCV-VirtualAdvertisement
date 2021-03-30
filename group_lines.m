@@ -1,4 +1,4 @@
-function [lines_vert, lines_hor] = group_lines(lines, tmax)
+function [lines_vert, lines_hor] = group_lines(lines)
 %GROUP_LINES groups the lines to vertical or horizontal based on their angle in
 %the image. The resulting groups are sorted in such a way that the vertical
 %lines are sorted to appear from left to right in the image. For the horizontal
@@ -16,10 +16,6 @@ function [lines_vert, lines_hor] = group_lines(lines, tmax)
 %       angle and rho the distance from the origin. The lines are sorted based
 %       on the theta value in increasing order. 
 %       Note: this should be the output of the HOUGH_LINE_DETECTION function.
-%   tmax : double
-%       Value that indicates when a line is considered to be horizontal in the
-%       image. All lines that have an angle in the image less than tmax are
-%       considered to be horizontal lines.
 % 
 %   Returns
 %   -------
@@ -35,8 +31,8 @@ function [lines_vert, lines_hor] = group_lines(lines, tmax)
 lines_vert = [];
 lines_hor = [];
 for i = 1:length(lines)
-    % horizontal line if angle in image is less than x degrees
-    if abs(90 - abs(lines(i).theta)) < tmax
+    % Horizontal line if angle is negative
+    if lines(i).theta < 0
         lines_hor = [lines_hor, lines(i)];
     else
         lines_vert = [lines_vert, lines(i)];
