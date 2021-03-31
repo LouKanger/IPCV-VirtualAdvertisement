@@ -133,7 +133,7 @@ lines = hough_line_detection(white_field_lines, num_peaks, fill_gap, min_length)
 lines = remove_duplicate_lines(lines, dtheta, drho);
 
 % Divide lines into vertical and horizontal groups, sort them and convert to homogeneous coordinates
-[lines_vert, lines_hor] = group_lines(lines, tmax);
+[lines_vert, lines_hor] = group_lines(lines);
 
 % Detect and remove any outliers (goal post lines or arc lines)
 angles_vert = [lines_vert.theta];
@@ -221,45 +221,49 @@ q_init = field_line_int_points_left(point_idx(:,2),:);
 ad_img = im2uint8(ind2rgb(ad_img, cmap));
 ad_img = imrotate(ad_img, 90);  % Rotate to place along back field line
 
-% Apply scale and translation to model coordinates for better result
+% Define a reference object for the advertisement sign image
+qq = [0,                0;
+      size(ad_img,1),   0;
+      size(ad_img,1),   size(ad_img,2);
+      0,                size(ad_img,2)];
+
+qq_xWorldLimits = [min(qq(:,1)), max(qq(:,1))];
+qq_yWorldLimits = [min(qq(:,2)), max(qq(:,2))];
+ad_img_ref2 = imref2d(size(ad_img), qq_xWorldLimits, qq_yWorldLimits);
+
+% Define scale and translation for the model coordinates for better result
 scale = 10;
 offset = (size(im,1) - scale * height) / 2;
-
-% Setup for warping the advertisement sign
-x = zeros(length(adv_points_model), 2);
-y = zeros(length(adv_points_model), 2);
-for k = 1:length(adv_points_model)
-    pt1 = adv_points_model(k).point1;
-    pt2 = adv_points_model(k).point2;
-    x(k,1) = pt1(1) * scale + offset;
-    x(k,2) = pt2(1) * scale + offset;
-    y(k,1) = pt1(2) * scale + offset;
-    y(k,2) = pt2(2) * scale + offset;
-end
-
-% Create the image reference object for the image in the scale model coordinates
-xWorldLimits = [min(x, [], 'all'), max(x, [], 'all')];
-yWorldLimits = [min(y, [], 'all'), max(y, [], 'all')];
-ad_img_ref = imref2d(size(ad_img), xWorldLimits, yWorldLimits);
-
-% Reset the video reader and get the number of frames (quirky Matlab stuff)
-video_reader = VideoReader(strcat(data_dir_name,'/',input_video_filename));
-num_frames = video_reader.NumberOfFrames;
-video_reader = VideoReader(strcat(data_dir_name,'/',input_video_filename));
-
-% Create video multi-frame matrix to store the frames
-max_frames = 150; %30;
 
 % Store the previous lines
 lines_vert_h_old = lines_vert_h;
 lines_hor_h_old = lines_hor_h;
 
+% Reset the video reader and get the number of frames (quirky Matlab stuff)
+video_reader = VideoReader(strcat(data_dir_name,'/',input_video_filename));
+% num_frames = video_reader.NumberOfFrames;
+% video_reader = VideoReader(strcat(data_dir_name,'/',input_video_filename));
+
+% Set the maximum number of frames to process
+max_frames = 150;
+
 % Array to store the corners of the transformed virtual advertisement sign
-warped_ad_points = zeros(max_frames, 2, 4); % (num_frames, xy, 4 corners)
+warped_ad_points = zeros(max_frames, 4, 2); % (num_frames, 4 corners, xy)
+
+% Create video object with 15 FPS
+writerObj = VideoWriter(strcat(output_dir_name,'/',output_video_filename), 'MPEG-4');
+writerObj.FrameRate = 15;
+
+% Write the frames to the video object to create the video
+open(writerObj);
+fig = figure('units','normalized','position',[0.1 0.1 0.7 0.7]);
+imshow(im_rgb_raw,[],'InitialMagnification',200);
+hold on
 
 % Frame counter
 frame = 1;
 
+% Start the loop
 disp("Transforming advertisement sign onto the frames.")
 tic;
 while hasFrame(video_reader)
@@ -313,7 +317,7 @@ while hasFrame(video_reader)
     q = field_line_int_points_left(point_idx(:,2),:);  % Same in every frame
 
     % ------------------------------------------------------------------------ %
-    % ----------[ Calculate Homography and transform advertisement ]----------- %
+    % ---------[ Calculate Homography and transform advertisement ]----------- %
     % ------------------------------------------------------------------------ %
     % Fit and determine the geometric transform using the point pairs
     Hm2w = fitgeotrans(q * scale + offset, p, 'projective');
@@ -336,9 +340,40 @@ while hasFrame(video_reader)
     Y = [adv_points_world(1).point1(2), adv_points_world(2).point1(2), ...
         adv_points_world(2).point2(2), adv_points_world(1).point2(2)];
     
-    warped_ad_points(frame, 1, :) = X(:);
-    warped_ad_points(frame, 2, :) = Y(:);
-   
+    warped_ad_points(frame, :, 1) = X(:);
+    warped_ad_points(frame, :, 2) = Y(:);
+    
+    
+    % ------------------------------------------------------------------------ %
+    % -----------------[ Place advertisement sign on frame ]------------------ %
+    % ------------------------------------------------------------------------ %
+    % Determine the geometric transform of the ad image to the virtual position
+    Tform = fitgeotrans(qq, reshape(warped_ad_points(frame,:,:), 4,2), 'projective');
+    
+    % Warp the advertisement image onto the field
+    warped_ad_img = imwarp(ad_img, ad_img_ref2, Tform, ...
+        'OutputView', imref2d(size(im_rgb_raw)));
+
+    % Place only the advertisement sign on the green field pixels of the new frame
+    field_mask = construct_field_mask(im_rgb_raw, round(dlambda*1.25));
+    field_mask = field_mask .* ones([size(field_mask),3]);
+    masked_warped_ad = im2uint8(im2double(warped_ad_img) .* field_mask);
+
+    idx = (sum(masked_warped_ad, 3) ~= 0);
+    idx = logical(idx .* ones([size(idx),3]));
+    stitched = im_rgb_raw;
+    stitched(idx) = masked_warped_ad(idx);
+    
+    % Clear old figure data to reduce memory usage
+    clf(fig);
+    
+    % Show the new frame with the virtual advertisement sign
+    imshow(stitched,[],'InitialMagnification',200);
+    title("Frame " + num2str(frame));
+    
+    % Write the figure frame to the video
+    writeVideo(writerObj, getframe(fig));
+
     % Update the frame counter and check if max frame number is reached
     frame = frame + 1;
     if frame > max_frames
@@ -346,80 +381,14 @@ while hasFrame(video_reader)
     end
 end
 
+% End the timer and display the total computation time
 calc_time = toc;
-disp("Completed calculations for each frame in " + calc_time + " seconds.")
+disp("Completed calculations and placing the sign for each frame.")
+disp("Total computation time: " + calc_time + " seconds.")
 
-%% Create video of the noise filtered virtual advertisement sign
-% Smooth the transformed virtual advertisement points
-frame_span = 15;
-ad_pos = zeros(size(warped_ad_points, 1), 4, 2);
-for i = 1:size(ad_pos,2)
-    ad_pos(:,i,1) = smooth(warped_ad_points(:,1,i), frame_span, 'rloess');
-    ad_pos(:,i,2) = smooth(warped_ad_points(:,2,i), frame_span, 'rloess');
-end
-
-% Define the new image reference object for the advertisement
-qq = [0,                0
-      size(ad_img,1),   0;
-      size(ad_img,1),   size(ad_img,2);
-      0,                size(ad_img,2)];
-
-qq_xWorldLimits = [min(qq(:,1)), max(qq(:,1))];
-qq_yWorldLimits = [min(qq(:,2)), max(qq(:,2))];
-ad_img_ref2 = imref2d(size(ad_img), qq_xWorldLimits, qq_yWorldLimits);
-
-% Reset the video reader
-video_reader = VideoReader(strcat(data_dir_name,'/',input_video_filename));
-
-% Create video object with 15 FPS
-writerObj = VideoWriter(strcat(output_dir_name,'/',output_video_filename));
-writerObj.FrameRate = 15;
-disp("Creating video ...")
-
-% Write the frames to the video object to create the video
-open(writerObj);
-fig = figure('units','normalized','position',[0.1 0.1 0.7 0.7]);
-imshow(im_rgb_raw,[],'InitialMagnification',200);
-hold on
-
-tic;
-for frame = 1:size(ad_pos, 1)
-    % Grab the next frame from the video reader
-    frame_img = readFrame(video_reader);
-    
-    % Determine the geometric transform of the ad image to the virtual position
-    Tform = fitgeotrans(qq, reshape(ad_pos(frame,:,:), 4,2), 'projective');
-    
-    % Warp the advertisement image onto the field
-    warped_ad_img = imwarp(ad_img, ad_img_ref2, Tform, ...
-        'OutputView', imref2d(size(im_rgb_raw)));
-
-    % Place only the advertisement sign on the green field pixels of the new frame
-    field_mask = construct_field_mask(frame_img, round(dlambda*1.25));
-    field_mask = field_mask .* ones([size(field_mask),3]);
-    masked_warped_ad = im2uint8(im2double(warped_ad_img) .* field_mask);
-
-    idx = (sum(masked_warped_ad, 3) ~= 0);
-    idx = logical(idx .* ones([size(idx),3]));
-    stitched = frame_img;
-    stitched(idx) = masked_warped_ad(idx);
-    
-    imshow(stitched,[],'InitialMagnification',200);
-%     patch(ad_pos(frame,:,1), ad_pos(frame,:,2),'red');
-    title("Frame " + num2str(frame));
-    
-    % Store the figure frame
-    writeVideo(writerObj, getframe(fig));
-    
-    % Clear figure data to reduce memory usage
-    clf(fig);
-end
+% Close the video writer and all open figure windows
 close(writerObj);
 close all;
-
-vid_create_time = toc;
-disp("Finished video with name: '"+output_video_filename+"'")
-disp("Calculation time is " + vid_create_time + " seconds.")
 
 %% Plot the corner positions of the virtual advertisement sign (data visualisation)
 % Plot the x-coordinates
@@ -427,14 +396,11 @@ figure;
 ax1 = subplot(1,2,1);
 hold on
 for i = 1:4
-    p1 = warped_ad_points(:, :, i);
+    p1 = warped_ad_points(:, i, :);
     h = plot(p1(:,1), '.', 'MarkerSize', 5);
-    plot(smooth(p1(:,1), 0.1, 'rloess'), 'Color', h.Color, 'LineWidth', 1.5);
 end
 hold off
 title("x pos");
-legend("Raw 1", "Filtered 1", "Raw 2", "Filtered 2", "Raw 3", "Filtered 3", ...
-    "Raw 4", "Filtered 4", 'Location', 'southeast', 'Position',[0.35 0.12 0.17 0.28]);
 xlabel("Frame number");
 ylabel("Pixel number");
 
@@ -442,11 +408,11 @@ ylabel("Pixel number");
 ax2 = subplot(1,2,2);
 hold on
 for i = 1:4
-    p1 = warped_ad_points(:, :, i);
+    p1 = warped_ad_points(:, i, :);
     h = plot(p1(:,2), '.', 'MarkerSize', 5);
-    plot(smooth(p1(:,2), 0.1, 'rloess'), 'Color', h.Color, 'LineWidth', 1.5);
 end
 hold off
 title("y pos");
 xlabel("Frame number");
 ylabel("Pixel number");
+
