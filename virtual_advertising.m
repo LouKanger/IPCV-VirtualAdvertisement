@@ -47,14 +47,11 @@ dlambda = 30;       % number of color points around dominant color peak
 tl = 128;           % luminace threshold
 td = 20;            % difference threshold
 tau = 10;           % line width assumption (twice this value)
-num_peaks = 12;     % number of Hough peaks
+num_peaks = 11;     % number of Hough peaks
 fill_gap = 50;      % maximum gap between two linesegments (which still counts as 1 line)
-min_length = 200;   % minimum length of the found lines
+min_length = 125;   % minimum length of the found lines
 dtheta = 3.5;       % if angle difference bewteen 2 lines less than dtheta, remove 1
 drho = 50;          % if distance between 2 lines less than drho, remove 1
-tmax = 12;          % line has angle less than tmax is labeled horizontal
-tvert = 1.25;       % outlier threshold factor (smaller is more sensitive)
-thor = 3.0;         % outlier threshold factor (3 is the default value of ISOUTLIER)
 sigma_r = 6;        % max distance between white pixel and line
 num_iterations = 3; % number of line refinement iterations
 
@@ -132,14 +129,11 @@ lines = hough_line_detection(white_field_lines, num_peaks, fill_gap, min_length)
 % Remove duplicate lines (line segments that represent the same field line)
 lines = remove_duplicate_lines(lines, dtheta, drho);
 
-% Divide lines into vertical and horizontal groups, sort them and convert to homogeneous coordinates
+% Group lines
 [lines_vert, lines_hor] = group_lines(lines);
 
-% Detect and remove any outliers (goal post lines or arc lines)
-angles_vert = [lines_vert.theta];
-angles_hor = [lines_hor.theta];
-lines_vert(isoutlier(angles_vert, 'ThresholdFactor', tvert)) = [];
-lines_hor(isoutlier(angles_hor, 'ThresholdFactor', thor)) = [];
+% Remove the outliers
+[lines_vert, lines_hor] = remove_outliers(lines_vert, lines_hor);
 
 % Convert to homogeneous coordinates
 lines_vert_h = lines_to_homogeneous(lines_vert);
@@ -181,7 +175,7 @@ plot_hlines(lines_hor_h, white_field_lines, 'blue');
 scatter(intersections(:,1), intersections(:,2), 30, 'red', 'filled');
 for i = 1:size(intersections, 1)
     pt = intersections(i,:);
-    text(pt(1), pt(2)+30, num2str(i),'FontSize',12);
+    text(pt(1)-10, pt(2)+25, num2str(i),'FontSize',12);
 end
 
 % show the model field lines and intersections
@@ -208,8 +202,13 @@ end
 % Ask to write down the correct combination of intersections
 point_idx = input('Write down the corresponding intersection points: [p1, q1; p2, q2; ...]\n');
 % Here are the combinations of the example videos:
-% soccer_video_AJAX_1: 
-%         [1,1; 2,2; 3,3; 4,4; 6,7; 7,8; 8,9; 12,14; 13,15; 14,16; 15,17]
+% soccer_video_example1: 
+%       [1,1; 2,2; 3,3; 4,4; 6,7; 7,8; 8,9; 9,10; 12,14; 13,15; 14,16; 15,17]
+% soccer_video_example2:
+%       [1,1; 2,2; 3,3; 4,4; 6,7; 7,8; 8,9; 9,10; 12,14; 13,15; 14,16; 15,17]
+% soccer_video_example3:
+%       [1,1; 2,2; 3,3; 4,4; 6,7; 7,8; 8,9; 9,10; 11,13; 12,14; 13,15; 14,16; 15,17]
+
 
 % store the result (p = detected intersections, q = model intersections)
 p_init = intersections(point_idx(:,1),:);
@@ -239,20 +238,19 @@ offset = (size(im,1) - scale * height) / 2;
 lines_vert_h_old = lines_vert_h;
 lines_hor_h_old = lines_hor_h;
 
-% Reset the video reader and get the number of frames (quirky Matlab stuff)
+% Reset the video reader and get the number of frames
 video_reader = VideoReader(strcat(data_dir_name,'/',input_video_filename));
-% num_frames = video_reader.NumberOfFrames;
-% video_reader = VideoReader(strcat(data_dir_name,'/',input_video_filename));
+num_frames = floor(video_reader.Duration * video_reader.FrameRate);
 
-% Set the maximum number of frames to process
-max_frames = 150;
+% Create video object with a specified FPS
+writerObj = VideoWriter(strcat(output_dir_name,'/',output_video_filename), 'MPEG-4');
+writerObj.FrameRate = 15;
+
+% Set the maximum number of frames equal a multiple of the specified frame rate
+max_frames = num_frames - mod(num_frames, writerObj.FrameRate);
 
 % Array to store the corners of the transformed virtual advertisement sign
 warped_ad_points = zeros(max_frames, 4, 2); % (num_frames, 4 corners, xy)
-
-% Create video object with 15 FPS
-writerObj = VideoWriter(strcat(output_dir_name,'/',output_video_filename), 'MPEG-4');
-writerObj.FrameRate = 15;
 
 % Write the frames to the video object to create the video
 open(writerObj);
