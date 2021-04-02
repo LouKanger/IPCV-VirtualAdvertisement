@@ -40,7 +40,7 @@ data_dir_name = 'data';
 output_dir_name = 'processed_videos';
 input_video_filename = 'soccer_video_example1.mp4';
 advertisement_sign_filename = 'ad_sign_example1.png';
-output_video_filename = 'virtual_ad_result_vid_example1_time_test.mp4';
+output_video_filename = 'virtual_ad_result_vid_example1.mp4';
 
 % Define all parameters of the field line detection and optimisation algorithm
 dlambda = 30;       % number of color points around dominant color peak
