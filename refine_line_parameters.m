@@ -30,6 +30,9 @@ function [hlines1, hlines2] = refine_line_parameters(BW, hlines1, hlines2, sr, n
 %       coordinate system.
 %
 
+% Make a logical matrix from the BW image
+BW = logical(BW);
+
 % perform the line refinement
 for iter = 1 : num_iters
     for k = 1 : max( [size(hlines1,1), size(hlines2,1)] )
@@ -37,17 +40,18 @@ for iter = 1 : num_iters
         L2 = [];
         for i = 1:size(BW, 1)
             for j = 1:size(BW, 2)
-                if BW(i,j) == 1
+                % Check if the considered pixel is a white field line pixel
+                if BW(i,j)
                     y = i; x = j;
                     % find white pixels for first line set refinement
                     if k <= size(hlines1,1)
-                        if abs( dot(hlines1(k,:), [x, y, 1]) ) <= sr
+                        if abs( sum(hlines1(k,:) .* [x, y, 1]) ) <= sr
                             L1 = [L1; [x, y]];
                         end
                     end
                     % find white pixels for the second line set refinement
                     if k <= size(hlines2,1)
-                        if abs( dot(hlines2(k,:), [x, y, 1]) ) <= sr
+                        if abs( sum(hlines2(k,:) .* [x, y, 1]) ) <= sr
                             L2 = [L2; [x, y]];
                         end
                     end
